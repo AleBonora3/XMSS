@@ -40,8 +40,8 @@ ok = xmss_verify(sig, msg, pk)
 print(ok)  # True
 ```
 
-Nota: XMSS e` stateful. Dopo ogni firma, salva sempre la chiave privata aggiornata
-(`sk2`), altrimenti rischi di riutilizzare lo stesso indice.
+Nota: XMSS è stateful. Dopo ogni firma, salva sempre la chiave privata aggiornata
+('sk2'), altrimenti rischi di riutilizzare lo stesso indice.
 
 ## Struttura del progetto
 
@@ -62,5 +62,5 @@ Nota: XMSS e` stateful. Dopo ogni firma, salva sempre la chiave privata aggiorna
 
 ## Note
 
-Questo progetto e` pensato per studio e dimostrazione. Non e` un'implementazione
+Questo progetto è pensato per studio e dimostrazione. Non è un'implementazione
 production-ready: usa con attenzione e non riutilizzare mai uno stesso indice di firma.
