@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XMSS Merkle Viewer</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero-text">
+        <h1>XMSS Merkle Viewer</h1>
+        <p>Visualizza l'albero di Merkle e il percorso di autenticazione per una firma XMSS.</p>
+      </div>
+      <div class="hero-meta">
+        <label class="demo-label demo-label--header">
+          Seleziona test
+          <select id="demo-select"></select>
+        </label>
+        <div class="chip" id="root-status">root_match: ...</div>
+        <div class="chip" id="params">params: ...</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <div class="toolbar">
+          <button id="play">Play</button>
+          <button id="step-back">Step back</button>
+          <button id="step">Step</button>
+          <label>
+            Velocita
+            <input id="speed" type="range" min="200" max="1400" step="100" value="700" />
+          </label>
+          <label>
+            Step
+            <input id="stepRange" type="range" min="0" max="0" step="1" value="0" />
+          </label>
+        </div>
+
+        <div class="legend">
+          <span class="legend-item path">Path</span>
+          <span class="legend-item sib">Sibling</span>
+          <span class="legend-item other">Altro</span>
+        </div>
+
+        <div class="canvas-wrap">
+          <svg id="tree" role="img" aria-label="Merkle tree"></svg>
+        </div>
+        <h2>Calcoli step corrente</h2>
+        <div id="step-details" class="mono"></div>
+        <h2>Esito demo</h2>
+        <div id="demo-details" class="mono"></div>
+      </section>
+
+      <aside class="panel details">
+        <h2>Dettagli nodo</h2>
+        <div id="node-details" class="mono"></div>
+        <h2>Parametri pubblici</h2>
+        <div id="public-params" class="mono"></div>
+        <h2>Legenda e formule</h2>
+        <div id="legend-formulas" class="mono"></div>
+      </aside>
+    </main>
+
+    <section class="panel table-panel">
+      <h2>Risultati test</h2>
+      <div class="table-wrap">
+        <table id="tests-table">
+          <thead>
+            <tr>
+              <th>Test</th>
+              <th>verify</th>
+              <th>root_match</th>
+              <th>note</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Carica dati da <code>../merkle.json</code>. Avvia un server locale per il fetch.</span>
+    </footer>
+
+    <script src="viewer.js"></script>
+  </body>
+</html>
