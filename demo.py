@@ -138,62 +138,6 @@ def _auth_nodes_for_msg(sig: bytes, msg: bytes, PK, auth_path: list[dict]) -> li
         nodes.append(node)
         idx //= 2
     return nodes
-
-def _flip_first_bit(data: bytes) -> bytes:
-    if not data:
-        return data
-    return bytes([data[0] ^ 0x01]) + data[1:]
-
-def _run_extra_tests(params: XMSSParams) -> dict:
-    results: dict[str, object] = {}
-
-    SK, PK = xmss_keygen(params)
-    msg = b"test XMSS"
-    SK2, sig = xmss_sign(msg, SK)
-
-    # Test base (sign/verify OK, wrong message, corrupted signature) sono nel viewer.
-
-    # Test 4: wrong PK (chiave pubblica diversa).
-    _, PK_wrong = xmss_keygen(params)
-    results["wrong_pk"] = xmss_verify(sig, msg, PK_wrong)
-
-    # Test 5: signature length (troncata e con byte extra).
-    results["sig_truncated"] = xmss_verify(sig[:-1], msg, PK)
-    results["sig_extra"] = xmss_verify(sig + b"\x00", msg, PK)
-
-    # Test 6: idx monotono su N firme (deve essere strettamente crescente).
-    N = 4
-    idxs = []
-    SKn = SK2
-    for i in range(N):
-        SKn, sig_n = xmss_sign(msg + bytes([i]), SKn)
-        idxs.append(_sig_index(sig_n))
-    results["idx_values"] = idxs
-    results["idx_monotonic"] = all(idxs[i] < idxs[i + 1] for i in range(len(idxs) - 1))
-
-    # Test 7: exhaustion (2^h + 1 firme). L'ultima deve lanciare errore.
-    SK_exh, _ = xmss_keygen(params)
-    exhausted = False
-    try:
-        for _ in range(params.max_signatures + 1):
-            SK_exh, _ = xmss_sign(msg, SK_exh)
-    except ValueError:
-        exhausted = True
-    results["exhaustion_2^h_plus_1"] = exhausted
-
-    # Test 8: rollback demo. Ri-uso SK precedente per firmare -> stesso idx, due firme valide.
-    SK_rb, PK_rb = xmss_keygen(params)
-    SK_before = SK_rb
-    _, sig1 = xmss_sign(b"rollback-1", SK_rb)
-    _, sig2 = xmss_sign(b"rollback-2", SK_before)
-    results["rollback_same_idx"] = _sig_index(sig1) == _sig_index(sig2)
-    results["rollback_sig1_ok"] = xmss_verify(sig1, b"rollback-1", PK_rb)
-    results["rollback_sig2_ok"] = xmss_verify(sig2, b"rollback-2", PK_rb)
-    results["rollback_idx"] = _sig_index(sig1)
-
-    return results
-
-
 def _build_demo_payload(sig: bytes, msg: bytes, PK, base: dict | None, label: str, note: str | None = None,
                         extra: dict | None = None) -> dict:
     payload: dict[str, object] = {
@@ -253,9 +197,7 @@ def main() -> None:
 
     save_private_key("sk.bin", SK)
     save_public_key("pk.bin", PK)
-    msg = b"demo XMSS."
-
-    httpd = _start_server()
+    msg = b"Test demo XMSS."
 
     # --- firma ---
     SK = load_private_key("sk.bin")   # simula ripresa da disco
@@ -269,7 +211,8 @@ def main() -> None:
     print("verify (OK):", ok)
 
     # Test 2: wrong message. Verifica con messaggio diverso -> deve fallire.
-    neg_msg = xmss_verify(sig, b"msg diverso", PK)
+    msg_wrong = b"msg diverso"
+    neg_msg = xmss_verify(sig, msg_wrong, PK)
     print("verify wrong msg (NEGATIVO):", neg_msg)
 
     # Test 3: corrupted signature byte. Corrompe l'ultimo byte della firma (auth_path) -> deve fallire.
@@ -277,25 +220,20 @@ def main() -> None:
     neg_sig = xmss_verify(sig_bad, msg, PK)
     print("verify corrupted sig (NEGATIVO):", neg_sig)
 
-    target_idx = _sig_index(sig)
-    base = build_merkle_json(SK_init, target_idx=target_idx)
-    # Demo viewer: tutti i test richiesti come voci nel menu.
-    msg_wrong = b"msg diverso"
-    msg_flip = _flip_first_bit(msg)
-    _, PK_wrong = xmss_keygen(params)
+    # Test 4: wrong PK (chiave pubblica diversa).
+    SK_wrong, PK_wrong = xmss_keygen(params)
+    wrong_pk = xmss_verify(sig, msg, PK_wrong)
+    print("verify wrong PK (NEGATIVO):", wrong_pk)
+
+    # Test 5: signature length (troncata e con byte extra).
     sig_trunc = sig[:-1]
     sig_extra = sig + b"\x00"
+    neg_trunc = xmss_verify(sig_trunc, msg, PK)
+    neg_extra = xmss_verify(sig_extra, msg, PK)
+    print("verify sig trunc (NEGATIVO):", neg_trunc)
+    print("verify sig extra (NEGATIVO):", neg_extra)
 
-    # Test idx monotono.
-    SK_mono, PK_mono = xmss_keygen(params)
-    idxs = []
-    SKn = SK_mono
-    for i in range(4):
-        SKn, sig_n = xmss_sign(msg + bytes([i]), SKn)
-        idxs.append(_sig_index(sig_n))
-    idx_monotonic = all(idxs[i] < idxs[i + 1] for i in range(len(idxs) - 1))
-
-    # Test exhaustion.
+    # Test 7: exhaustion (2^h + 1 firme).
     SK_exh, _ = xmss_keygen(params)
     exhausted = False
     try:
@@ -303,13 +241,32 @@ def main() -> None:
             SK_exh, _ = xmss_sign(msg, SK_exh)
     except ValueError:
         exhausted = True
+    print("exhaustion (OK atteso):", exhausted)
 
-    # Test rollback.
+    # Test 6: idx monotono su N firme (massimo 2^h firme per chiave).
+    SK_mono, _ = xmss_keygen(params)
+    idxs = []
+    SKn = SK_mono
+    for i in range(params.max_signatures):
+        SKn, sig_n = xmss_sign(msg + bytes([i % 256]), SKn)
+        idxs.append(_sig_index(sig_n))
+    idx_monotonic = all(idxs[i] < idxs[i + 1] for i in range(len(idxs) - 1))
+    print("idx values:", idxs)
+    print("idx monotonic (OK atteso):", idx_monotonic)
+
+    # Test 8: rollback demo. Ri-uso SK precedente per firmare -> stesso idx, due firme valide.
     SK_rb, PK_rb = xmss_keygen(params)
     SK_before = SK_rb
     _, sig_rb1 = xmss_sign(b"rollback-1", SK_rb)
     _, sig_rb2 = xmss_sign(b"rollback-2", SK_before)
     base_rb = build_merkle_json(SK_rb, target_idx=_sig_index(sig_rb1))
+    print("rollback same idx (OK atteso):", _sig_index(sig_rb1) == _sig_index(sig_rb2))
+    print("rollback sig1 verify (OK atteso):", xmss_verify(sig_rb1, b"rollback-1", PK_rb))
+    print("rollback sig2 verify (OK atteso):", xmss_verify(sig_rb2, b"rollback-2", PK_rb))
+
+    target_idx = _sig_index(sig)
+    base = build_merkle_json(SK_init, target_idx=target_idx)
+    base_wrong = build_merkle_json(SK_wrong, target_idx=target_idx)
 
     demos = {
         # I primi tre test rimangono come prima (già verificati nel viewer).
@@ -317,20 +274,20 @@ def main() -> None:
         "wrong_msg": _build_demo_payload(sig, msg_wrong, PK, base, "Messaggio diverso"),
         "corrupted_sig": _build_demo_payload(sig_bad, msg, PK, base, "Firma corrotta"),
         # Test aggiuntivi richiesti.
-        "wrong_pk": _build_demo_payload(sig, msg, PK_wrong, base, "Wrong PK"),
+        "wrong_pk": _build_demo_payload(sig, msg, PK_wrong, base_wrong, "Wrong PK"),
         "sig_trunc": _build_demo_payload(sig_trunc, msg, PK, base, "Signature length (truncated)"),
         "sig_extra": _build_demo_payload(sig_extra, msg, PK, base, "Signature length (extra byte)"),
-        "idx_monotonic": {
-            "label": "Idx monotono su N firme",
-            "note": "Gli indici devono essere strettamente crescenti.",
-            "idx_values": idxs,
-            "idx_monotonic": idx_monotonic,
-        },
         "exhaustion": {
             "label": "Exhaustion (2^h + 1)",
             "note": "L'ultima firma deve fallire per esaurimento indici.",
             "exhausted": exhausted,
             "max_signatures": params.max_signatures,
+        },
+        "idx_monotonic": {
+            "label": "Idx monotono su N firme",
+            "note": "Max 2^h firme per chiave: indici strettamente crescenti fino a 2^h - 1.",
+            "idx_values": idxs,
+            "idx_monotonic": idx_monotonic,
         },
         "rollback": _build_demo_payload(
             sig_rb1,
@@ -348,11 +305,8 @@ def main() -> None:
     }
     dump_merkle_json("merkle.json", SK_init, target_idx=target_idx, demos=demos)  # salva albero + demo
 
-    print("\n--- extra tests ---")
-    extra = _run_extra_tests(params)
-    for k, v in extra.items():
-        print(f"{k}: {v}")
-
+    httpd = _start_server()
+    
     input("Premi Invio per chiudere il server...")
     httpd.shutdown()
 
