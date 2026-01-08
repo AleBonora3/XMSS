@@ -17,6 +17,21 @@ from serialize import save_private_key, load_private_key, save_public_key, load_
 from merkle_dump import dump_merkle_json, build_merkle_json
 
 
+class NoCacheHandler(SimpleHTTPRequestHandler):
+    def end_headers(self) -> None:
+        # Disable browser caching for JSON/JS during local demos.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+
+def _ensure_output_dir(base_dir: str) -> str:
+    out_dir = os.path.join(base_dir, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    return out_dir
+
+
 def _find_free_port(start: int = 8000, max_tries: int = 20) -> int:
     for port in range(start, start + max_tries):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -30,7 +45,7 @@ def _find_free_port(start: int = 8000, max_tries: int = 20) -> int:
 
 def _start_server() -> ThreadingHTTPServer:
     port = _find_free_port()
-    httpd = ThreadingHTTPServer(("localhost", port), SimpleHTTPRequestHandler)
+    httpd = ThreadingHTTPServer(("localhost", port), NoCacheHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     print(f"Viewer: http://localhost:{port}/viewer/index.html")
@@ -190,21 +205,24 @@ def _build_demo_payload(sig: bytes, msg: bytes, PK, base: dict | None, label: st
 def main() -> None:
     base_dir = os.path.dirname(__file__)
     os.chdir(base_dir)
+    out_dir = _ensure_output_dir(base_dir)
+    sk_path = os.path.join(out_dir, "sk.bin")
+    pk_path = os.path.join(out_dir, "pk.bin")
 
     params = XMSSParams(n=32, w=16, h=4)
     SK, PK = xmss_keygen(params)
     SK_init = SK
 
-    save_private_key("sk.bin", SK)
-    save_public_key("pk.bin", PK)
+    save_private_key(sk_path, SK)
+    save_public_key(pk_path, PK)
     msg = b"Test demo XMSS."
 
     # --- firma ---
-    SK = load_private_key("sk.bin")   # simula ripresa da disco
-    PK = load_public_key("pk.bin")
+    SK = load_private_key(sk_path)   # simula ripresa da disco
+    PK = load_public_key(pk_path)
 
     SK2, sig = xmss_sign(msg, SK)
-    save_private_key("sk.bin", SK2)   # IMPORTANTISSIMO: salva stato aggiornato
+    save_private_key(sk_path, SK2)   # IMPORTANTISSIMO: salva stato aggiornato
 
     # Test 1: sign/verify OK. La firma deve verificare con lo stesso messaggio e PK corretta.
     ok = xmss_verify(sig, msg, PK)
